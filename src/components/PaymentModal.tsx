@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { useAuth } from './contexts/AuthContext';
-import { projectId } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 import { toast } from 'sonner@2.0.3';
 
 // Types
@@ -140,7 +140,7 @@ export function PaymentModal({ isOpen, onClose, plan, selectedCurrency }: Paymen
     
     try {
       // Create payment session
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/payment/create-session`, {
+      const response = await fetch(apiRoutes.payment('/create-session'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user?.access_token}`,

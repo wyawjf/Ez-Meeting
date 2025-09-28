@@ -41,7 +41,8 @@ import {
   ACCOUNT_LIMITS,
   type AccountType
 } from './utils/timeTrackingUtils';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { publicAnonKey } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 
 export function UserDashboard() {
   const { t, language } = useContext(LanguageContext);
@@ -204,7 +205,7 @@ export function UserDashboard() {
     if (!user?.email) return;
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/check-admin/${user.email}`, {
+      const response = await fetch(apiRoutes.absolute(`/check-admin/${user.email}`), {
         headers: {
           'Authorization': `Bearer ${publicAnonKey}`,
         },
@@ -225,7 +226,7 @@ export function UserDashboard() {
     if (!user?.email) return;
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/force-admin`, {
+      const response = await fetch(apiRoutes.absolute('/force-admin'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${publicAnonKey}`,

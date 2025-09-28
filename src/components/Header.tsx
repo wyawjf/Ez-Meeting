@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { LanguageContext, ThemeContext } from '../App';
 import { useAuth } from './contexts/AuthContext';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 
 export function Header() {
   const { language, setLanguage, t } = useContext(LanguageContext);
@@ -39,7 +39,7 @@ export function Header() {
     
     setIsSettingUpAdmin(true);
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/setup-admin`, {
+      const response = await fetch(apiRoutes.admin('/setup-admin'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,

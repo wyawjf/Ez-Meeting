@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { useAuth } from './contexts/AuthContext';
-import { projectId } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 import { toast } from 'sonner@2.0.3';
 
 // Simplified Types for better compatibility
@@ -121,7 +121,7 @@ export function PricingManagementPanel() {
     try {
       setLoading(true);
       
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/pricing-plans`, {
+      const response = await fetch(apiRoutes.admin('/pricing-plans'), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${user?.access_token}`,
@@ -300,7 +300,7 @@ export function PricingManagementPanel() {
         updatedAt: new Date().toISOString()
       };
 
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/pricing-plans`, {
+      const response = await fetch(apiRoutes.admin('/pricing-plans'), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -331,7 +331,7 @@ export function PricingManagementPanel() {
     if (!user?.access_token) return;
 
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/pricing-plans/${planId}`, {
+      const response = await fetch(apiRoutes.admin(`/pricing-plans/${planId}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,

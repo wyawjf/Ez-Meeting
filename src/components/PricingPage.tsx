@@ -25,7 +25,8 @@ import {
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { useAuth } from './contexts/AuthContext';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { publicAnonKey } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 import { toast } from 'sonner@2.0.3';
 import { PaymentModal } from './PaymentModal';
 
@@ -98,7 +99,7 @@ export function PricingPage() {
       console.log('🔄 Loading pricing plans from backend...');
       
       // Use the public pricing endpoint (not admin endpoint)
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/pricing-plans`, {
+      const response = await fetch(apiRoutes.absolute('/pricing-plans'), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${publicAnonKey}`,

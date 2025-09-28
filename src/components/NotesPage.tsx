@@ -55,7 +55,8 @@ import {
 import { LanguageContext } from '../App';
 import { useAuth } from './contexts/AuthContext';
 import { LoginPrompt } from './LoginPrompt';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { publicAnonKey } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 import { formatRecordingDuration } from './utils/audioUtils';
 import { 
   addTimeUsage,
@@ -160,7 +161,7 @@ export function NotesPage() {
       if (user) {
         // Load from server for authenticated users
         try {
-          const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/user/get-notes`, {
+          const response = await fetch(apiRoutes.user('/get-notes'), {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${publicAnonKey}`,
@@ -251,7 +252,7 @@ export function NotesPage() {
       if (user) {
         // Delete from server
         try {
-          const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/user/delete-note`, {
+          const response = await fetch(apiRoutes.user('/delete-note'), {
             method: 'DELETE',
             headers: {
               'Authorization': `Bearer ${publicAnonKey}`,

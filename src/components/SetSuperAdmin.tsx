@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Alert, AlertDescription } from './ui/alert';
 import { Crown, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { LanguageContext } from '../App';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { publicAnonKey } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 import { toast } from 'sonner@2.0.3';
 
 export function SetSuperAdmin() {
@@ -18,7 +19,7 @@ export function SetSuperAdmin() {
     setError(null);
 
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/set-super-admin`, {
+      const response = await fetch(apiRoutes.admin('/set-super-admin'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${publicAnonKey}`,

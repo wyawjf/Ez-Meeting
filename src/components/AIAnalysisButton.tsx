@@ -30,7 +30,8 @@ import {
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { useAuth } from './contexts/AuthContext';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { publicAnonKey } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 import { toast } from 'sonner@2.0.3';
 
 // Types
@@ -113,7 +114,7 @@ export function AIAnalysisButton({ noteId, transcripts, title, accountType, clas
     try {
       // Check for cached analysis first
       const cachedResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-851310fa/ai/analysis/${noteId}`,
+        apiRoutes.ai(`/analysis/${noteId}`),
         {
           method: 'GET',
           headers: {
@@ -139,7 +140,7 @@ export function AIAnalysisButton({ noteId, transcripts, title, accountType, clas
 
       // Generate new analysis
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-851310fa/ai/analyze-notes`,
+        apiRoutes.ai('/analyze-notes'),
         {
           method: 'POST',
           headers: {
@@ -228,7 +229,7 @@ export function AIAnalysisButton({ noteId, transcripts, title, accountType, clas
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-851310fa/ai/translate-analysis`,
+        apiRoutes.ai('/translate-analysis'),
         {
           method: 'POST',
           headers: {

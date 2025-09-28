@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { useAuth } from './contexts/AuthContext';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 import { toast } from 'sonner@2.0.3';
 
 // Types
@@ -108,7 +108,7 @@ export function AdminDashboard() {
     if (!user?.access_token) return;
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/stats`, {
+      const response = await fetch(apiRoutes.admin('/stats'), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -141,7 +141,7 @@ export function AdminDashboard() {
         accountType: userAccountFilter
       });
 
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/users?${params}`, {
+      const response = await fetch(`${apiRoutes.admin('/users')}?${params}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -168,7 +168,7 @@ export function AdminDashboard() {
     if (!user?.access_token) return;
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/logs?page=1&limit=50`, {
+      const response = await fetch(`${apiRoutes.admin('/logs')}?page=1&limit=50`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -193,7 +193,7 @@ export function AdminDashboard() {
     if (!user?.access_token) return;
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/usage-analytics?days=30`, {
+      const response = await fetch(`${apiRoutes.admin('/usage-analytics')}?days=30`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -218,7 +218,7 @@ export function AdminDashboard() {
     if (!user?.access_token) return;
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/users/${userId}/role`, {
+      const response = await fetch(apiRoutes.admin(`/users/${userId}/role`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -244,7 +244,7 @@ export function AdminDashboard() {
     if (!user?.access_token) return;
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/users/${userId}/account-type`, {
+      const response = await fetch(apiRoutes.admin(`/users/${userId}/account-type`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -271,7 +271,7 @@ export function AdminDashboard() {
     if (!user?.access_token) return;
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/users/${userId}/status`, {
+      const response = await fetch(apiRoutes.admin(`/users/${userId}/status`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
