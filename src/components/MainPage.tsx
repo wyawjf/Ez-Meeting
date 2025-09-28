@@ -45,7 +45,8 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { LanguageContext } from '../App';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { publicAnonKey } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 import { FloatingSubtitleWidget } from './FloatingSubtitleWidget';
 import { FloatingSubtitleWindow } from './FloatingSubtitleWindow';
 
@@ -326,7 +327,7 @@ export function MainPage() {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/test-openai`, {
+      const response = await fetch(apiRoutes.absolute('/test-openai'), {
         method: 'GET',
         headers: { 
           'Authorization': `Bearer ${publicAnonKey}`,
@@ -876,7 +877,7 @@ export function MainPage() {
 
       if (user) {
         try {
-          const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/user/save-note`, {
+          const response = await fetch(apiRoutes.user('/save-note'), {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${publicAnonKey}`,

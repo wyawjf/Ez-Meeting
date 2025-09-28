@@ -1,7 +1,8 @@
 // Time tracking utilities for Ez Meeting with user authentication
 // Manages daily time limits, usage tracking, and account types
 
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { projectId } from '../../utils/supabase/info';
+import { apiRoutes } from '../../utils/api/endpoints';
 
 export interface TimeUsage {
   date: string;
@@ -59,7 +60,7 @@ async function makeAuthenticatedRequest(endpoint: string, options: RequestInit =
     throw new Error('Not authenticated');
   }
 
-  const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa${endpoint}`, {
+  const response = await fetch(apiRoutes.absolute(endpoint), {
     ...options,
     headers: {
       'Authorization': `Bearer ${token}`,

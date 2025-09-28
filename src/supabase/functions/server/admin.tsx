@@ -1,7 +1,9 @@
 import { Hono } from 'npm:hono';
 import { cors } from 'npm:hono/cors';
-import { createClient } from 'npm:@supabase/supabase-js@2';
 import * as kv from './kv_store.tsx';
+import { supabaseAdminClient } from './services/supabaseClient.ts';
+import { requireAdminUser, requireAuthenticatedUser, getUserProfile } from './services/auth.ts';
+import { logAdminAction } from './services/audit.ts';
 
 const app = new Hono();
 
@@ -21,33 +23,6 @@ app.use('*', cors({
   credentials: true,
 }));
 
-// Create Supabase client with service role key
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
-
-// Types
-interface UserRole {
-  id: string;
-  role: 'user' | 'admin' | 'super_admin';
-  email: string;
-  name?: string;
-  accountType: 'free' | 'pro' | 'enterprise';
-  createdAt: string;
-  lastLoginAt?: string;
-  isActive: boolean;
-}
-
-interface AdminLog {
-  id: string;
-  adminId: string;
-  action: string;
-  targetId?: string;
-  details?: any;
-  createdAt: string;
-}
-
 interface SystemStats {
   totalUsers: number;
   activeUsers: number;
@@ -59,63 +34,6 @@ interface SystemStats {
   enterpriseUsers: number;
 }
 
-// Helper function to verify admin access
-async function verifyAdminAccess(request: Request): Promise<{ user: any; isAdmin: boolean }> {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    throw new Error('No authorization header');
-  }
-
-  const token = authHeader.substring(7);
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  
-  if (error || !user) {
-    throw new Error('Invalid token');
-  }
-
-  // Check if user has admin role
-  const adminRole = await kv.get(`user_role_${user.id}`);
-  const hasAdminRole = adminRole && (adminRole === 'admin' || adminRole === 'super_admin');
-  
-  // Only allow admin and super_admin access
-  const isAdmin = hasAdminRole;
-  
-  console.log('Admin access check:', {
-    userId: user.id,
-    email: user.email,
-    adminRole,
-    hasAdminRole,
-    isAdmin
-  });
-
-  return { user, isAdmin };
-}
-
-// Helper function to log admin actions
-async function logAdminAction(adminId: string, action: string, targetId?: string, details?: any) {
-  const logEntry: AdminLog = {
-    id: crypto.randomUUID(),
-    adminId,
-    action,
-    targetId,
-    details,
-    createdAt: new Date().toISOString()
-  };
-
-  await kv.set(`admin_log_${logEntry.id}`, logEntry);
-  
-  // Keep only recent logs (last 1000)
-  const existingLogs = await kv.getByPrefix('admin_log_');
-  if (existingLogs.length > 1000) {
-    const sortedLogs = existingLogs.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    // Delete old logs
-    for (let i = 1000; i < sortedLogs.length; i++) {
-      await kv.del(`admin_log_${sortedLogs[i].id}`);
-    }
-  }
-}
 
 // POST /auth/register - User registration endpoint
 app.post('/auth/register', async (c) => {
@@ -133,7 +51,7 @@ app.post('/auth/register', async (c) => {
     console.log('Creating new user account:', email);
 
     // Create user with Supabase Auth
-    const { data, error } = await supabase.auth.admin.createUser({
+    const { data, error } = await supabaseAdminClient.auth.admin.createUser({
       email,
       password,
       user_metadata: { name },
@@ -205,76 +123,68 @@ app.post('/auth/register', async (c) => {
 // POST /admin/setup-admin - Set up initial admin
 app.post('/admin/setup-admin', async (c) => {
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return c.json({ error: 'No authorization header' }, 401);
-    }
-
-    const token = authHeader.substring(7);
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    
-    if (error || !user) {
-      return c.json({ error: 'Invalid token' }, 401);
-    }
+    const { supabaseUser, role: currentRole } = await requireAuthenticatedUser(c.req.raw);
 
     // Allow setup only for specific email or if no admins exist
     console.log('🔒 Checking admin setup eligibility...');
-    
+
     // Check if this is the first admin setup (no existing admins)
     const existingAdmins = await kv.getByPrefix('user_role_');
     const hasAdmins = existingAdmins.some(role => role === 'admin' || role === 'super_admin');
-    
+
     // Allow setup if no admins exist OR if current user is already an admin OR if this is Wyatt's email
-    const currentUserRole = await kv.get(`user_role_${user.id}`);
-    const isCurrentUserAdmin = currentUserRole === 'admin' || currentUserRole === 'super_admin';
-    const isWyattEmail = user.email === 'awyawjf2000@gmail.com';
-    
+    const isCurrentUserAdmin = currentRole === 'admin' || currentRole === 'super_admin';
+    const isWyattEmail = supabaseUser.email === 'awyawjf2000@gmail.com';
+
     if (hasAdmins && !isCurrentUserAdmin && !isWyattEmail) {
       return c.json({ error: 'Admin setup not allowed. Admins already exist and you are not authorized.' }, 403);
     }
-    
+
     console.log('Setting up admin for user:', {
-      userId: user.id,
-      email: user.email,
-      currentRole: currentUserRole,
+      userId: supabaseUser.id,
+      email: supabaseUser.email,
+      currentRole: currentRole,
       isCurrentUserAdmin
     });
 
     // Set user as super admin
-    await kv.set(`user_role_${user.id}`, 'super_admin');
-    
+    await kv.set(`user_role_${supabaseUser.id}`, 'super_admin');
+
     // Update user profile
-    const userProfile = await kv.get(`user_profile_${user.id}`) || {
-      id: user.id,
-      email: user.email,
-      name: user.user_metadata?.name || user.email?.split('@')[0] || 'Admin',
+    const userProfile = await kv.get(`user_profile_${supabaseUser.id}`) || {
+      id: supabaseUser.id,
+      email: supabaseUser.email,
+      name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0] || 'Admin',
       accountType: 'pro', // Give admin pro account
       createdAt: new Date().toISOString(),
       isActive: true
     };
-    
+
     userProfile.role = 'super_admin';
     userProfile.accountType = 'pro'; // Upgrade to pro
-    await kv.set(`user_profile_${user.id}`, userProfile);
+    await kv.set(`user_profile_${supabaseUser.id}`, userProfile);
 
     // Log the action
-    await logAdminAction(user.id, 'SETUP_ADMIN', user.id, { 
-      email: user.email,
+    await logAdminAction(supabaseUser.id, 'SETUP_ADMIN', supabaseUser.id, {
+      email: supabaseUser.email,
       setupTime: new Date().toISOString()
     });
 
-    return c.json({ 
-      success: true, 
+    return c.json({
+      success: true,
       message: 'Super admin privileges granted successfully',
       user: {
-        id: user.id,
-        email: user.email,
+        id: supabaseUser.id,
+        email: supabaseUser.email,
         role: 'super_admin',
         accountType: 'pro'
       }
     });
-    
+
   } catch (error) {
+    if (error instanceof Error && (error.message.includes('authorization') || error.message.includes('Invalid token'))) {
+      return c.json({ error: error.message }, 401);
+    }
     console.error('Admin setup error:', error);
     return c.json({ error: 'Failed to setup admin privileges' }, 500);
   }
@@ -283,11 +193,7 @@ app.post('/admin/setup-admin', async (c) => {
 // GET /admin/stats - Get system statistics
 app.get('/admin/stats', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser } = await requireAdminUser(c.req.raw);
 
     // Get all users
     const users = await kv.getByPrefix('user_profile_');
@@ -335,11 +241,14 @@ app.get('/admin/stats', async (c) => {
       enterpriseUsers
     };
 
-    await logAdminAction(user.id, 'VIEW_STATS');
+    await logAdminAction(supabaseUser.id, 'VIEW_STATS');
 
     return c.json({ stats });
     
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Admin stats error:', error);
     return c.json({ error: 'Failed to get admin statistics' }, 500);
   }
@@ -348,11 +257,7 @@ app.get('/admin/stats', async (c) => {
 // GET /admin/users - Get all users with pagination
 app.get('/admin/users', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser } = await requireAdminUser(c.req.raw);
 
     const page = parseInt(c.req.query('page') || '1');
     const limit = parseInt(c.req.query('limit') || '20');
@@ -408,7 +313,7 @@ app.get('/admin/users', async (c) => {
       })
     );
 
-    await logAdminAction(user.id, 'VIEW_USERS', undefined, { page, limit, search });
+    await logAdminAction(supabaseUser.id, 'VIEW_USERS', undefined, { page, limit, search });
 
     return c.json({
       users: usersWithStats,
@@ -421,6 +326,9 @@ app.get('/admin/users', async (c) => {
     });
     
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Admin users error:', error);
     return c.json({ error: 'Failed to get users' }, 500);
   }
@@ -429,22 +337,15 @@ app.get('/admin/users', async (c) => {
 // PUT /admin/users/:userId/role - Update user role
 app.put('/admin/users/:userId/role', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser, role: currentUserRole } = await requireAdminUser(c.req.raw);
 
     const userId = c.req.param('userId');
     const { role } = await c.req.json();
-    
+
     if (!['user', 'admin', 'super_admin'].includes(role)) {
       return c.json({ error: 'Invalid role' }, 400);
     }
 
-    // Get current user's role
-    const currentUserRole = await kv.get(`user_role_${user.id}`) || 'user';
-    
     // Get target user profile
     const userProfile = await kv.get(`user_profile_${userId}`);
     if (!userProfile) {
@@ -460,16 +361,19 @@ app.put('/admin/users/:userId/role', async (c) => {
 
     // Update user role
     await kv.set(`user_role_${userId}`, role);
-    
+
     // Update user profile
     const updatedProfile = { ...userProfile, role };
     await kv.set(`user_profile_${userId}`, updatedProfile);
 
-    await logAdminAction(user.id, 'UPDATE_USER_ROLE', userId, { oldRole: targetUserRole, newRole: role });
+    await logAdminAction(supabaseUser.id, 'UPDATE_USER_ROLE', userId, { oldRole: targetUserRole, newRole: role });
 
     return c.json({ success: true, message: 'User role updated successfully' });
-    
+
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Admin update role error:', error);
     return c.json({ error: 'Failed to update user role' }, 500);
   }
@@ -478,15 +382,11 @@ app.put('/admin/users/:userId/role', async (c) => {
 // PUT /admin/users/:userId/account-type - Update user account type
 app.put('/admin/users/:userId/account-type', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser } = await requireAdminUser(c.req.raw);
 
     const userId = c.req.param('userId');
     const { accountType } = await c.req.json();
-    
+
     if (!['free', 'pro', 'enterprise'].includes(accountType)) {
       return c.json({ error: 'Invalid account type' }, 400);
     }
@@ -501,14 +401,17 @@ app.put('/admin/users/:userId/account-type', async (c) => {
     const updatedProfile = { ...userProfile, accountType };
     await kv.set(`user_profile_${userId}`, updatedProfile);
 
-    await logAdminAction(user.id, 'UPDATE_ACCOUNT_TYPE', userId, { 
-      oldAccountType: userProfile.accountType, 
-      newAccountType: accountType 
+    await logAdminAction(supabaseUser.id, 'UPDATE_ACCOUNT_TYPE', userId, {
+      oldAccountType: userProfile.accountType,
+      newAccountType: accountType
     });
 
     return c.json({ success: true, message: 'Account type updated successfully' });
-    
+
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Admin update account type error:', error);
     return c.json({ error: 'Failed to update account type' }, 500);
   }
@@ -517,17 +420,10 @@ app.put('/admin/users/:userId/account-type', async (c) => {
 // DELETE /admin/users/:userId - Delete user
 app.delete('/admin/users/:userId', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser, role: currentUserRole } = await requireAdminUser(c.req.raw);
 
     const userId = c.req.param('userId');
-    
-    // Get current user's role
-    const currentUserRole = await kv.get(`user_role_${user.id}`) || 'user';
-    
+
     // Get target user profile
     const userProfile = await kv.get(`user_profile_${userId}`);
     if (!userProfile) {
@@ -537,7 +433,7 @@ app.delete('/admin/users/:userId', async (c) => {
     const targetUserRole = userProfile.role || 'user';
 
     // Permission check: prevent self-deletion
-    if (userId === user.id) {
+    if (userId === supabaseUser.id) {
       return c.json({ error: 'Cannot delete your own account' }, 403);
     }
 
@@ -549,7 +445,7 @@ app.delete('/admin/users/:userId', async (c) => {
     // Delete user profile and related data
     await kv.del(`user_profile_${userId}`);
     await kv.del(`user_role_${userId}`);
-    
+
     // Delete usage records
     const usageRecords = await kv.getByPrefix(`time_usage_${userId}_`);
     for (const record of usageRecords) {
@@ -564,15 +460,18 @@ app.delete('/admin/users/:userId', async (c) => {
       }
     }
 
-    await logAdminAction(user.id, 'DELETE_USER', userId, { 
+    await logAdminAction(supabaseUser.id, 'DELETE_USER', userId, {
       deletedUserEmail: userProfile.email,
       deletedUserRole: targetUserRole,
       deletedUserAccountType: userProfile.accountType
     });
 
     return c.json({ success: true, message: 'User deleted successfully' });
-    
+
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Admin delete user error:', error);
     return c.json({ error: 'Failed to delete user' }, 500);
   }
@@ -581,14 +480,10 @@ app.delete('/admin/users/:userId', async (c) => {
 // POST /admin/create-manual-user - Create user manually by admin
 app.post('/admin/create-manual-user', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser, role: currentUserRole } = await requireAdminUser(c.req.raw);
 
     const { email, name, password, role, accountType, isActive } = await c.req.json();
-    
+
     if (!email || !name || !password) {
       return c.json({ error: 'Email, name, and password are required' }, 400);
     }
@@ -605,9 +500,6 @@ app.post('/admin/create-manual-user', async (c) => {
       return c.json({ error: 'Invalid account type' }, 400);
     }
 
-    // Get current user's role
-    const currentUserRole = await kv.get(`user_role_${user.id}`) || 'user';
-    
     // Permission check: Only admin and super admin can create super admin users
     if (currentUserRole !== 'admin' && currentUserRole !== 'super_admin' && role === 'super_admin') {
       return c.json({ error: 'Only Admin or Super Admin can create Super Admin accounts' }, 403);
@@ -624,7 +516,7 @@ app.post('/admin/create-manual-user', async (c) => {
     // Create user with Supabase Auth
     console.log('Creating manual user account:', email);
 
-    const { data, error } = await supabase.auth.admin.createUser({
+    const { data, error } = await supabaseAdminClient.auth.admin.createUser({
       email,
       password,
       user_metadata: { name },
@@ -675,7 +567,7 @@ app.post('/admin/create-manual-user', async (c) => {
     };
     await kv.set(`time_usage_${data.user.id}_${today}`, usageData);
 
-    await logAdminAction(user.id, 'CREATE_MANUAL_USER', data.user.id, { 
+    await logAdminAction(supabaseUser.id, 'CREATE_MANUAL_USER', data.user.id, {
       email,
       name,
       role,
@@ -698,6 +590,9 @@ app.post('/admin/create-manual-user', async (c) => {
     });
     
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Manual user creation error:', error);
     return c.json({ error: 'Failed to create user. Please try again.' }, 500);
   }
@@ -706,11 +601,7 @@ app.post('/admin/create-manual-user', async (c) => {
 // PUT /admin/users/:userId/status - Toggle user active status
 app.put('/admin/users/:userId/status', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser } = await requireAdminUser(c.req.raw);
 
     const userId = c.req.param('userId');
     const { isActive } = await c.req.json();
@@ -725,14 +616,17 @@ app.put('/admin/users/:userId/status', async (c) => {
     const updatedProfile = { ...userProfile, isActive };
     await kv.set(`user_profile_${userId}`, updatedProfile);
 
-    await logAdminAction(user.id, 'UPDATE_USER_STATUS', userId, { 
-      oldStatus: userProfile.isActive, 
-      newStatus: isActive 
+    await logAdminAction(supabaseUser.id, 'UPDATE_USER_STATUS', userId, {
+      oldStatus: userProfile.isActive,
+      newStatus: isActive
     });
 
     return c.json({ success: true, message: 'User status updated successfully' });
-    
+
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Admin update status error:', error);
     return c.json({ error: 'Failed to update user status' }, 500);
   }
@@ -741,11 +635,7 @@ app.put('/admin/users/:userId/status', async (c) => {
 // GET /admin/logs - Get admin activity logs
 app.get('/admin/logs', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    await requireAdminUser(c.req.raw);
 
     const page = parseInt(c.req.query('page') || '1');
     const limit = parseInt(c.req.query('limit') || '50');
@@ -786,6 +676,9 @@ app.get('/admin/logs', async (c) => {
     });
     
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Admin logs error:', error);
     return c.json({ error: 'Failed to get admin logs' }, 500);
   }
@@ -794,11 +687,7 @@ app.get('/admin/logs', async (c) => {
 // GET /admin/pricing-plans - Get pricing plans (admin view)
 app.get('/admin/pricing-plans', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser } = await requireAdminUser(c.req.raw);
 
     // Get pricing plans from KV store
     const plans = await kv.getByPrefix('pricing_plan_');
@@ -867,14 +756,17 @@ app.get('/admin/pricing-plans', async (c) => {
       }
     ];
 
-    await logAdminAction(user.id, 'VIEW_PRICING_PLANS');
+    await logAdminAction(supabaseUser.id, 'VIEW_PRICING_PLANS');
 
-    return c.json({ 
-      success: true, 
-      plans: plans.length > 0 ? plans : defaultPlans 
+    return c.json({
+      success: true,
+      plans: plans.length > 0 ? plans : defaultPlans
     });
-    
+
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Error getting admin pricing plans:', error);
     return c.json({ error: 'Failed to get pricing plans' }, 500);
   }
@@ -883,11 +775,7 @@ app.get('/admin/pricing-plans', async (c) => {
 // PUT /admin/pricing-plans - Create or update pricing plan
 app.put('/admin/pricing-plans', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser } = await requireAdminUser(c.req.raw);
 
     const planData = await c.req.json();
     
@@ -905,9 +793,9 @@ app.put('/admin/pricing-plans', async (c) => {
     // Save pricing plan
     await kv.set(`pricing_plan_${plan.id}`, plan);
 
-    await logAdminAction(user.id, 'UPDATE_PRICING_PLAN', plan.id, { 
-      planName: plan.name, 
-      accountType: plan.accountType 
+    await logAdminAction(supabaseUser.id, 'UPDATE_PRICING_PLAN', plan.id, {
+      planName: plan.name,
+      accountType: plan.accountType
     });
 
     return c.json({ 
@@ -917,6 +805,9 @@ app.put('/admin/pricing-plans', async (c) => {
     });
     
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Error saving pricing plan:', error);
     return c.json({ error: 'Failed to save pricing plan' }, 500);
   }
@@ -925,11 +816,7 @@ app.put('/admin/pricing-plans', async (c) => {
 // DELETE /admin/pricing-plans/:planId - Delete pricing plan
 app.delete('/admin/pricing-plans/:planId', async (c) => {
   try {
-    const { user, isAdmin } = await verifyAdminAccess(c.req.raw);
-    
-    if (!isAdmin) {
-      return c.json({ error: 'Access denied. Admin privileges required.' }, 403);
-    }
+    const { supabaseUser } = await requireAdminUser(c.req.raw);
 
     const planId = c.req.param('planId');
     
@@ -947,9 +834,9 @@ app.delete('/admin/pricing-plans/:planId', async (c) => {
     // Delete pricing plan
     await kv.del(`pricing_plan_${planId}`);
 
-    await logAdminAction(user.id, 'DELETE_PRICING_PLAN', planId, { 
-      planName: existingPlan.name, 
-      accountType: existingPlan.accountType 
+    await logAdminAction(supabaseUser.id, 'DELETE_PRICING_PLAN', planId, {
+      planName: existingPlan.name,
+      accountType: existingPlan.accountType
     });
 
     return c.json({ 
@@ -958,6 +845,9 @@ app.delete('/admin/pricing-plans/:planId', async (c) => {
     });
     
   } catch (error) {
+    if (error instanceof Error && error.message.includes('Admin privileges')) {
+      return c.json({ error: error.message }, 403);
+    }
     console.error('Error deleting pricing plan:', error);
     return c.json({ error: 'Failed to delete pricing plan' }, 500);
   }
@@ -966,61 +856,30 @@ app.delete('/admin/pricing-plans/:planId', async (c) => {
 // GET /user/profile - Get user profile
 app.get('/user/profile', async (c) => {
   try {
-    const authHeader = c.req.header('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return c.json({ error: 'No authorization header' }, 401);
+    const { supabaseUser, profile, role } = await requireAuthenticatedUser(c.req.raw);
+
+    let storedProfile = await getUserProfile(supabaseUser.id);
+    if (!storedProfile) {
+      storedProfile = profile;
+      await kv.set(`user_profile_${supabaseUser.id}`, storedProfile);
+      await kv.set(`user_role_${supabaseUser.id}`, role);
     }
 
-    const token = authHeader.substring(7);
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    
-    if (error || !user) {
-      return c.json({ error: 'Invalid token' }, 401);
-    }
-
-    // Get user profile from KV store
-    const userProfile = await kv.get(`user_profile_${user.id}`);
-    
-    if (!userProfile) {
-      // Create basic profile if it doesn't exist
-      const basicProfile = {
-        id: user.id,
-        email: user.email,
-        name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
-        role: 'user',
-        accountType: 'free',
-        createdAt: new Date().toISOString(),
-        isActive: true,
-        preferences: {
-          sourceLanguage: 'auto',
-          targetLanguage: 'zh',
-          autoLanguageDetection: true,
-        }
-      };
-      
-      await kv.set(`user_profile_${user.id}`, basicProfile);
-      await kv.set(`user_role_${user.id}`, 'user');
-      
-      return c.json({
-        success: true,
-        user: basicProfile,
-        profile: basicProfile
-      });
-    }
-
-    // Get user role
-    const userRole = await kv.get(`user_role_${user.id}`) || 'user';
-    
     return c.json({
       success: true,
       user: {
-        ...userProfile,
-        role: userRole
+        ...storedProfile,
+        role,
       },
-      profile: userProfile
+      profile: storedProfile,
     });
-    
+
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes('authorization') || error.message.includes('Invalid token')) {
+        return c.json({ error: error.message }, 401);
+      }
+    }
     console.error('Get user profile error:', error);
     return c.json({ error: 'Failed to get user profile' }, 500);
   }

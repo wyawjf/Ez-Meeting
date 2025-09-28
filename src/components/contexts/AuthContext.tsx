@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { apiRoutes } from '../../utils/api/endpoints';
 
 // Supabase client
 const supabase = createClient(
@@ -111,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Try to load profile from backend
       try {
-        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/user/profile`, {
+        const response = await fetch(apiRoutes.user('/profile'), {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
@@ -282,7 +283,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('Starting registration for:', email);
       
       // Use server-side registration endpoint
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/auth/register`, {
+        const response = await fetch(apiRoutes.absolute('/auth/register'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -339,7 +340,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/user/update-profile`, {
+      const response = await fetch(apiRoutes.user('/update-profile'), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -364,7 +365,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Update last login timestamp
   const updateLastLogin = async (accessToken: string) => {
     try {
-      await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/user/save-time-usage`, {
+      await fetch(apiRoutes.user('/save-time-usage'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -387,7 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('Force refreshing user profile...');
         
         // Call force refresh endpoint
-        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/user/refresh-profile`, {
+        const response = await fetch(apiRoutes.user('/refresh-profile'), {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${user.access_token}`,
@@ -431,7 +432,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('🎯 Setting up Wyatt Wang admin privileges...');
       
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/setup-wyatt-admin`, {
+      const response = await fetch(apiRoutes.absolute('/setup-wyatt-admin'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

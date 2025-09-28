@@ -75,7 +75,7 @@ import {
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { useAuth } from './contexts/AuthContext';
-import { projectId } from '../utils/supabase/info';
+import { apiRoutes } from '../utils/api/endpoints';
 import { toast } from 'sonner@2.0.3';
 import { PaymentConfigPanel } from './PaymentConfigPanel';
 import { PricingManagementPanel } from './PricingManagementPanel';
@@ -261,7 +261,7 @@ export function ManagementPage() {
     try {
       // Load stats
       try {
-        const statsResponse = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/stats`, {
+        const statsResponse = await fetch(apiRoutes.admin('/stats'), {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${user.access_token}`,
@@ -286,7 +286,7 @@ export function ManagementPage() {
           accountType: userAccountFilter === 'all' ? '' : userAccountFilter
         });
 
-        const usersResponse = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/users?${params}`, {
+        const usersResponse = await fetch(`${apiRoutes.admin('/users')}?${params}`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${user.access_token}`,
@@ -308,7 +308,7 @@ export function ManagementPage() {
 
       // Load pricing plans
       try {
-        const pricingResponse = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/pricing-plans`, {
+        const pricingResponse = await fetch(apiRoutes.admin('/pricing-plans'), {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${user.access_token}`,
@@ -340,7 +340,7 @@ export function ManagementPage() {
     
     setIsSavingPricing(true);
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/pricing-plans`, {
+      const response = await fetch(apiRoutes.admin('/pricing-plans'), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -382,7 +382,7 @@ export function ManagementPage() {
 
     setIsCreatingUser(true);
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/create-manual-user`, {
+      const response = await fetch(apiRoutes.admin('/create-manual-user'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -436,7 +436,7 @@ export function ManagementPage() {
     }
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/users/${userId}/role`, {
+      const response = await fetch(apiRoutes.admin(`/users/${userId}/role`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -463,7 +463,7 @@ export function ManagementPage() {
     if (!user?.access_token) return;
     
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/users/${userId}/account-type`, {
+      const response = await fetch(apiRoutes.admin(`/users/${userId}/account-type`), {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,
@@ -491,7 +491,7 @@ export function ManagementPage() {
     
     setIsDeletingUser(true);
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/users/${userId}`, {
+      const response = await fetch(apiRoutes.admin(`/users/${userId}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${user.access_token}`,

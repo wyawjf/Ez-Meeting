@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { LanguageContext } from '../App';
 import { useAuth } from './contexts/AuthContext';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { apiRoutes, API_BASE_URL } from '../utils/api/endpoints';
 import { toast } from 'sonner@2.0.3';
 
 // Types
@@ -84,6 +84,7 @@ interface PaymentConfig {
 export function PaymentConfigPanel() {
   const { t, language } = useContext(LanguageContext);
   const { user } = useAuth();
+  const webhookUrl = `${API_BASE_URL}/payment/webhook`;
   
   // States
   const [config, setConfig] = useState<PaymentConfig>({
@@ -141,7 +142,7 @@ export function PaymentConfigPanel() {
     try {
       setLoading(true);
       
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/payment-config`, {
+      const response = await fetch(apiRoutes.admin('/payment-config'), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${user?.access_token}`,
@@ -168,7 +169,7 @@ export function PaymentConfigPanel() {
     try {
       setSaving(true);
       
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-851310fa/admin/payment-config`, {
+      const response = await fetch(apiRoutes.admin('/payment-config'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user?.access_token}`,
@@ -422,9 +423,9 @@ export function PaymentConfigPanel() {
               <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
                 <Info className="h-4 w-4 text-blue-600" />
                 <AlertDescription className="text-blue-700 dark:text-blue-300 text-sm">
-                  {language === 'zh' 
-                    ? 'Webhook URL: https://your-domain.supabase.co/functions/v1/make-server-851310fa/payment/webhook'
-                    : 'Webhook URL: https://your-domain.supabase.co/functions/v1/make-server-851310fa/payment/webhook'
+                  {language === 'zh'
+                    ? `Webhook 地址：${webhookUrl}`
+                    : `Webhook URL: ${webhookUrl}`
                   }
                 </AlertDescription>
               </Alert>
